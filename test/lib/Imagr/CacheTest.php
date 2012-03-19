@@ -35,6 +35,9 @@ class CacheTest extends PHPUnit_Framework_TestCase
         $cache = new Cache(realpath(__DIR__ . '/../../../src/cache'));
         $cache->set('foo', 'bar');
 
+        $this->assertTrue($cache->has('foo'));
         $this->assertEquals('bar', $cache->get('foo'));
+
+        $cache->flush();
     }
 }

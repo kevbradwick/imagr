@@ -134,8 +134,15 @@ class Cache
      */
     public function flush()
     {
-        unlink($this->path);
-        mkdir($this->path);
+        $dir = new \RecursiveDirectoryIterator($this->path);
+        $iter = new \RecursiveIteratorIterator($dir);
+        $pattern = preg_replace('/[\.]/i', '\\\$0', $this->extension);
+        $pattern = sprintf('/^.*%s$/i', $pattern);
+        $files = new \RegexIterator($iter, $pattern, \RecursiveRegexIterator::GET_MATCH);
+
+        foreach ($files as $file) {
+            unlink($file[0]);
+        }
     }
 
 
