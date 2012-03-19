@@ -3,11 +3,13 @@
 namespace Imagr;
 
 /**
- * Created by JetBrains PhpStorm.
- * User: kevin
- * Date: 19/03/12
- * Time: 12:04
- * To change this template use File | Settings | File Templates.
+ * Remote
+ *
+ * A Remote object will represent the remote file and contain its headers and body.
+ *
+ * @author  Kevin Bradwick <kbradwick@gmail.com>
+ * @package Imagr
+ * @license http://www.opensource.org/licenses/bsd-license.php
  */
 class Remote
 {
@@ -101,13 +103,6 @@ class Remote
         }
 
         return $default;
-    }
-
-    public function setHeaders()
-    {
-        foreach ($this->headers as $name => $value) {
-            header(sprintf('%s: %s', $name, $value));
-        }
     }
 
     /**

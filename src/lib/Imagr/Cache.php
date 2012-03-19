@@ -5,7 +5,7 @@ namespace Imagr;
 /**
  * Cache
  *
- * This class will create and mange the file caches for each image
+ * This class will create and manage the file caches for each image
  *
  * @author  Kevin Bradwick <kbradwick@gmail.com>
  * @package Imagr

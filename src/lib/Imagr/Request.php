@@ -3,11 +3,13 @@
 namespace Imagr;
 
 /**
- * Created by JetBrains PhpStorm.
- * User: kevin
- * Date: 19/03/12
- * Time: 09:48
- * To change this template use File | Settings | File Templates.
+ * Request
+ *
+ * The request object provides a simple way of obtaining request parameters or sensible defaults
+ *
+ * @author  Kevin Bradwick <kbradwick@gmail.com>
+ * @package Imagr
+ * @license http://www.opensource.org/licenses/bsd-license.php
  */
 class Request
 {
