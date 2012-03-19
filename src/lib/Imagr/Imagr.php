@@ -24,16 +24,34 @@ class Imagr
     protected $cache;
 
     /**
-     * @var Curl
+     * @var Request
      */
-    private $curl;
+    protected $request;
 
     /**
      * Class construct
      */
     public function __construct()
     {
+        $this->config = array_replace_recursive(
+            $this->defaultConfig(),
+            $this->getCustomConfig()
+        );
 
+        if ($this->getConfig('debug') === true) {
+            ini_set('display_errors', 1);
+            error_reporting(E_ALL);
+        }
+    }
+
+    /**
+     * Set the request object
+     *
+     * @param Request $request
+     */
+    public function setRequest(Request $request)
+    {
+        $this->request = $request;
     }
 
     /**
@@ -54,7 +72,10 @@ class Imagr
     protected function defaultConfig()
     {
         return array(
-            'cache_dir' => __DIR__ . '/cache'
+            'cache_dir' => realpath(__DIR__ . '/../../cache'),
+            'tmp_dir' => realpath(__DIR__ . '/../../tmp'),
+            'cache_time' => 0,
+            'debug' => false,
         );
     }
 
@@ -82,7 +103,7 @@ class Imagr
      */
     public function getCustomConfig()
     {
-        $configFile = __DIR__ . '/imagr-config.php';
+        $configFile = realpath(__DIR__ . '/../../imagr-config.php');
 
         if (file_exists($configFile) === true) {
             return include $configFile;
@@ -92,59 +113,17 @@ class Imagr
     }
 
     /**
-     * Obtain a GET parameter or return a default value if not set
-     *
-     * @param string $name
-     * @param mixed $default
-     * @return mixed
-     */
-    protected function getParam($name, $default=null)
-    {
-        if (array_key_exists($name, $_GET) === true) {
-            return trim($_GET[$name]);
-        }
-
-        return $default;
-    }
-
-    /**
-     * Get the image src url
-     *
-     * @return string
-     */
-    protected function getSrc()
-    {
-        return $this->getParam('src', '');
-    }
-
-    /**
-     * Get the width parameter
-     *
-     * @return int
-     */
-    protected function getWidth()
-    {
-        return (int) $this->getParam('w', 100);
-    }
-
-    /**
-     * Get the height parameter
-     *
-     * @return int
-     */
-    protected function getHeight()
-    {
-        return (int) $this->getParam('h', 100);
-    }
-
-    /**
      * Get the cache key for this request
      *
      * @return string
      */
     protected function getCacheKey()
     {
-        return md5($this->getSrc() . $this->getWidth() . $this->getHeight());
+        $src    = $this->request->get('src', '');
+        $width  = (int) $this->request->get('w', 100);
+        $height = (int) $this->request->get('h', 100);
+
+        return md5($src . $width . $height);
     }
 
     /**
@@ -155,9 +134,13 @@ class Imagr
     public function process()
     {
         if ($this->cache->has($this->getCacheKey()) === true) {
-            //.. server cached version
+            $remote = $this->cache->get($this->getCacheKey());
+        } else {
+            $remote = new Remote($this->request->get('src'));
+            $this->cache->set($this->getCacheKey(), $remote, (int) $this->getConfig('cache_time', 0));
         }
 
-        $tmp = $this->curl->get($this->getSrc());
+        $remote->setHeaders();
+        echo $remote->getContent();
     }
 }
