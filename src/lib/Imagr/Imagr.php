@@ -165,7 +165,7 @@ class Imagr
     {
         $src = $this->request->get('src');
         $remote = $this->remoteCache->get($src);
-        if ($remote === false) {
+        if ($remote === null) {
             $remote = new Remote($src);
             $this->remoteCache->set($src, $remote, (int) $this->getConfig('cache_time', 0));
         }
@@ -180,6 +180,10 @@ class Imagr
      */
     public function process()
     {
+        if ($this->request->get('src') === null) {
+            return '';
+        }
+
         $remote     = $this->getRemote();
         $tmpFile    = $this->getTemporaryImageFile($remote);
         $dst_width  = $this->getCanvasWidth($tmpFile);
