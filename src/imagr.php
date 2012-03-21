@@ -6,7 +6,7 @@ spl_autoload_register(function($className){
         return;
     }
 
-    $filename = sprintf('%s/lib/%s.php', __DIR__, str_replace('\\', '/', $className));
+    $filename = sprintf('%s/lib/%s.php', __DIR__, str_replace('\\', DIRECTORY_SEPERATOR, $className));
     if (file_exists($filename) === true) {
         require_once $filename;
     }
