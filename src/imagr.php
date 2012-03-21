@@ -13,6 +13,9 @@ spl_autoload_register(function($className){
 });
 
 $imagr = new Imagr\Imagr();
+
+// cache
+$remoteCacheDir = $imagr-
 $imagr->setRequest(new Imagr\Request(array($_GET)));
 $imagr->setCache(new Imagr\Cache($imagr->getConfig('cache_dir')));
 $imagr->process();

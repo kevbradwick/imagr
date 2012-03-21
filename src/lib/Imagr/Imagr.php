@@ -23,7 +23,12 @@ class Imagr
     /**
      * @var Cache
      */
-    protected $cache;
+    protected $imageCache;
+
+    /**
+     * @var Cache
+     */
+    protected $remoteCache;
 
     /**
      * @var Request
@@ -35,11 +40,13 @@ class Imagr
      */
     public function __construct()
     {
+        // merge custom config to default config
         $this->config = array_replace_recursive(
             $this->defaultConfig(),
             $this->getCustomConfig()
         );
 
+        // scream errors and notices if in debug mode
         if ($this->getConfig('debug') === true) {
             ini_set('display_errors', 1);
             error_reporting(E_ALL);
@@ -57,13 +64,23 @@ class Imagr
     }
 
     /**
-     * Set the cache driver
+     * Set the cache driver for remote request objects
      *
      * @param Cache $cache
      */
-    public function setCache(Cache $cache)
+    public function setRemoteCache(Cache $cache)
     {
-        $this->cache = $cache;
+        $this->remoteCache = $cache;
+    }
+
+    /**
+     * Set the cache driver to use for the image cache
+     *
+     * @param Cache $cache
+     */
+    public function setImageCache(Cache $cache)
+    {
+        $this->imageCache = $cache;
     }
 
     /**
@@ -81,6 +98,14 @@ class Imagr
             'default_width' => 100,
             'default_height' => 100,
             'debug' => false,
+            'mime_types' => array(
+                'image/jpeg',
+                'image/jpg',
+                'image/jpe',
+                'image/png',
+                'image/gif',
+            ),
+            'allowed_ips' => array(),
         );
     }
 
@@ -132,19 +157,30 @@ class Imagr
     }
 
     /**
+     * Get the remote file
+     *
+     * @return Remote
+     */
+    protected function getRemote()
+    {
+        $src = $this->request->get('src');
+        $remote = $this->remoteCache->get($src);
+        if ($remote === false) {
+            $remote = new Remote($src);
+            $this->remoteCache->set($src, $remote, (int) $this->getConfig('cache_time', 0));
+        }
+
+        return $remote;
+    }
+
+    /**
      * Process this request
      *
      * @return null
      */
     public function process()
     {
-        if ($this->cache->has($this->getCacheKey()) === true) {
-            $remote = $this->cache->get($this->getCacheKey());
-        } else {
-            $remote = new Remote($this->request->get('src'));
-            $this->cache->set($this->getCacheKey(), $remote, (int) $this->getConfig('cache_time', 0));
-        }
-
+        $remote     = $this->getRemote();
         $tmpFile    = $this->getTemporaryImageFile($remote);
         $dst_width  = $this->getCanvasWidth($tmpFile);
         $dst_height = $this->getCanvasHeight($tmpFile);
@@ -159,7 +195,7 @@ class Imagr
         $out = imagecreatetruecolor($dst_width, $dst_height);
         imagecopyresampled($out, $tmpFile['resource'], 0, 0, 0, 0, $dst_width, $dst_height, $tmpFile['info'][0], $tmpFile['info'][1]);
 
-        
+
         header('Content-Type: image/jpeg');
         imagejpeg($out);
     }
