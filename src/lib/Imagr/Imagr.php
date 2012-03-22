@@ -36,6 +36,11 @@ class Imagr
     protected $request;
 
     /**
+     * @var Remote
+     */
+    protected $remoteFile;
+
+    /**
      * Class construct
      */
     public function __construct()
@@ -105,7 +110,6 @@ class Imagr
                 'image/png',
                 'image/gif',
             ),
-            'allowed_ips' => array(),
         );
     }
 
@@ -157,7 +161,8 @@ class Imagr
     }
 
     /**
-     * Get the remote file
+     * Get the remote file. The remote file is represented as a Remote object that is cacheable and provides
+     * introspection of the image file.
      *
      * @return Remote
      */
@@ -174,73 +179,140 @@ class Imagr
     }
 
     /**
+     * Only allow image file extensions here. Mime will get checked later
+     *
+     * @return bool
+     */
+    protected function validateRequest()
+    {
+        $pass = true;
+
+        if ($this->request->get('src') === null) {
+            $pass = false;
+        }
+
+        if (preg_match('/(jpg|jpeg|gif|png)$/', $this->request->get('src')) === 0) {
+            $pass = false;
+        }
+
+        return $pass;
+    }
+
+    /**
+     * Send a 404 header and exit
+     *
+     * @return null
+     */
+    protected function send404()
+    {
+        header('HTTP/1.0 404 Not Found');
+        exit(1);
+    }
+
+    /**
+     * Validate a mime type is an image
+     *
+     * @return null
+     */
+    protected function validateMimeTypeIsImage()
+    {
+        $mime = $this->remoteFile->getHeader('Content-Type');
+        $mimes = $this->getConfig('mime_types', array());
+
+        if (in_array($mime, $mimes) === false) {
+            $this->send404();
+        }
+    }
+
+    /**
+     * Run validation.
+     *
+     * @return null
+     */
+    protected function runValidation()
+    {
+        $validators = array(
+            'validateRequest',
+            'validateMimeTypeIsImage',
+        );
+
+        foreach ($validators as $validator) {
+            call_user_func(array($this, $validator));
+        }
+    }
+
+    /**
      * Process this request
      *
      * @return null
      */
     public function process()
     {
-        if ($this->request->get('src') === null) {
-            return '';
+        // get the remote file to be used in
+        $this->remoteFile = $this->getRemote();
+        $this->runValidation();
+
+        header(sprintf('Content-Type: %s', $this->remoteFile->getHeader('Content-Type')));
+
+        $cached = $this->getCachedOutputImage();
+        if ($cached !== false) {
+            echo $cached;
+            exit(0);
         }
 
-        $remote     = $this->getRemote();
-        $tmpFile    = $this->getTemporaryImageFile($remote);
-        $dst_width  = $this->getCanvasWidth($tmpFile);
-        $dst_height = $this->getCanvasHeight($tmpFile);
-        $src_width  = $this->getSourceWidth($tmpFile);
-        $src_height = $this->getSourceHeight($tmpFile);
+        $tmpImage  = $this->getOriginalImageGdResource($this->remoteFile);
+        $dstWidth  = $this->getCanvasWidth();
+        $dstHeight = $this->getCanvasHeight();
+        $origInfo  = $this->getOriginalImageInfo();
 
-//        var_dump("Canvas width: $dst_width, height: $dst_height");
-//        var_dump("Source width: $src_width, height: $src_height");
-//        var_dump($tmpFile);
+        // aspect ratios
+        $srcRatio = ($origInfo[0] / $origInfo[1]);
+        $dstRatio = ($dstWidth / $dstHeight);
 
+        if ( $srcRatio > $dstRatio ) {
+            $tmpHeight = $dstHeight;
+            $tmpWidth = intval($dstHeight * $srcRatio);
+        } else {
+            $tmpWidth = $dstWidth;
+            $tmpHeight = intval($dstWidth / $srcRatio);
+        }
 
-        $out = imagecreatetruecolor($dst_width, $dst_height);
-        imagecopyresampled($out, $tmpFile['resource'], 0, 0, 0, 0, $dst_width, $dst_height, $tmpFile['info'][0], $tmpFile['info'][1]);
+        $tmpGd = imagecreatetruecolor($tmpWidth, $tmpHeight);
+        imagecopyresampled($tmpGd, $tmpImage, 0, 0, 0, 0, $tmpWidth, $tmpHeight, $origInfo[0], $origInfo[1]);
 
+        $x = ($tmpWidth - $dstWidth) / 2;
+        $y = ($tmpHeight - $dstHeight) / 2;
 
-        header('Content-Type: image/jpeg');
-        imagejpeg($out);
+        $gdim = imagecreatetruecolor($dstWidth, $dstHeight);
+        imagecopy($gdim, $tmpGd, 0, 0, $x, $y, $dstWidth, $dstHeight);
+
+        imagejpeg( $gdim );
     }
 
-    public function getSourceWidth(array $file)
+    /**
+     * This will check if there already exists a cached image file and return it
+     *
+     * @return bool|string
+     */
+    protected function getCachedOutputImage()
     {
-        if ($this->request->get('c', '0') === '0') {
-            return intval($file['info'][0]);
+        $imageRootDir = sprintf('%s/%s', $this->imageCache->getPath(), md5($this->request->get('src')));
+        $cachedImage = sprintf('%s/%s', $imageRootDir, $this->getCacheKey());
+        if (file_exists($cachedImage) === true) {
+            return file_get_contents($cachedImage);
         }
 
-        $dst_width  = $this->getCanvasWidth($file);
-        $dst_height = $this->getCanvasHeight($file);
-
-        $cmp_x = $file[0] / $dst_width;
-        $cmp_y = $file[1] / $dst_height;
-
-
-    }
-
-    public function getSourceHeight(array $file)
-    {
-        if ($this->request->get('c', '0') === '0') {
-            return intval($file['info'][1]);
-        }
-
-        $dst_width  = $this->getCanvasWidth($file);
-        $dst_height = $this->getCanvasHeight($file);
-
-        if ($file['orientation'] === 'landscape') {
-            return intval($file['info'][0]);
-        }
+        return false;
     }
 
     /**
      * Get the canvas width
      *
-     * @param array $file
      * @return int|mixed
      */
-    protected function getCanvasWidth(array $file)
+    protected function getCanvasWidth()
     {
+        $info = $this->getOriginalImageInfo();
         $width = $this->request->get('w', false);
         $height = $this->request->get('h', false);
 
@@ -252,7 +324,7 @@ class Imagr
         $height = intval($height);
 
         if ($height > 0 && $width == 0) {
-            return intval(($file['info'][0] / $file['info'][1]) * $height);
+            return intval(($info[0] / $info[1]) * $height);
         }
 
         return $width;
@@ -261,11 +333,11 @@ class Imagr
     /**
      * Get the canvas height
      *
-     * @param array $file
      * @return int|mixed
      */
-    protected function getCanvasHeight(array $file)
+    protected function getCanvasHeight()
     {
+        $info = $this->getOriginalImageInfo();
         $width = $this->request->get('w', false);
         $height = $this->request->get('h', false);
 
@@ -277,39 +349,34 @@ class Imagr
         $height = intval($height);
 
         if ($width > 0 && $height == 0) {
-            return intval(($file['info'][1] / $file['info'][0]) * $width);
+            return intval(($info[1] / $info[0]) * $width);
         }
 
         return $height;
     }
 
     /**
-     * This method will create the temporary image file made out of the original and return an array with information
-     * about it including, dimensions, ratio, orientation and file object
+     * Get or create the GD image resource and return it
      *
      * @param Remote $remote
-     * @return array
+     * @return resource
      */
-    protected function getTemporaryImageFile(Remote $remote)
+    protected function getOriginalImageGdResource(Remote $remote)
     {
-        $tmpFile = sprintf('%s/%s_tmp', $this->getConfig('tmp_dir'), $this->getCacheKey());
+        $tmpFile = $this->getOriginalImagePath();
+
+        // if the temporary file does not exist, create it, otherwise return it
         if (file_exists($tmpFile) === false) {
             touch($tmpFile);
+            $file = new \SplFileObject($tmpFile, 'w');
+            $file->fwrite($remote->getContent());
+        } else {
+            $file = new \SplFileObject($tmpFile, 'r');
         }
 
-        $tmp = new \SplFileObject($tmpFile, 'w');
-        $tmp->fwrite($remote->getContent());
-
-        $file = $tmp->getPath() . '/' . $tmp->getFilename();
-        $info = getimagesize($file);
+        $info = getimagesize($tmpFile);
 
         switch ($info['mime']) {
-            case 'image/jpeg':
-            case 'image/jpg':
-            case 'image/jpe':
-                $img = imagecreatefromjpeg($file);
-                break;
-
             case 'image/png':
                 $img = imagecreatefrompng($file);
                 break;
@@ -319,24 +386,45 @@ class Imagr
                 break;
 
             default:
-                throw new \RuntimeException('Unknown file type. Are you sure this is an image?');
+                $img = imagecreatefromjpeg($file);
+                break;
         }
 
-        if ($info[0] === $info[1]) {
-            $orientation = 'square';
-        } else if ($info[0] > $info[1]) {
-            $orientation = 'landscape';
-        } else {
-            $orientation = 'portrait';
+        return $img;
+    }
+
+    /**
+     * Get the image info
+     *
+     * @return array
+     */
+    protected function getOriginalImageInfo()
+    {
+        $tmpFile = $this->getOriginalImagePath();
+        return getimagesize($tmpFile);
+    }
+
+    /**
+     * This will look for the original image in the cache and return it or create it if it doesn't exist
+     *
+     * @return string
+     */
+    protected function getOriginalImagePath()
+    {
+        $imageRootDir = sprintf('%s/%s', $this->imageCache->getPath(), md5($this->request->get('src')));
+        if (is_dir($imageRootDir) === false) {
+            mkdir($imageRootDir);
         }
 
-        return array(
-            'file' => $tmp,
-            'info' => $info,
-            'filepath' => $file,
-            'resource' => $img,
-            'orientation' => $orientation,
-            'ratio' => ($info[0] / $info[1])
-        );
+        $imageFileName = md5($this->request->get('src')) . '_original' . $this->remoteFile->getExtension();
+        $tmpFile = sprintf('%s/%s', $imageRootDir, $imageFileName);
+
+        if (file_exists($tmpFile) === false) {
+            touch($tmpFile);
+            $file = new \SplFileObject($tmpFile, 'w');
+            $file->fwrite($this->remoteFile->getContent());
+        }
+
+        return $tmpFile;
     }
 }

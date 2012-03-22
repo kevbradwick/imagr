@@ -130,4 +130,20 @@ class Remote
     {
         return base64_decode($this->content);
     }
+
+    /**
+     * Get the implied file extension
+     *
+     * @return string
+     */
+    public function getExtension()
+    {
+        preg_match('/(\.[a-z]+)$/', $this->url, $matches);
+
+        if (count($matches) > 0) {
+            return $matches[1];
+        }
+
+        return '';
+    }
 }

@@ -173,4 +173,14 @@ class Cache
         $id = strtolower($id);
         return sprintf('%s-%s', $hash, $id);
     }
+
+    /**
+     * The path to this cache location
+     *
+     * @return string
+     */
+    public function getPath()
+    {
+        return $this->path;
+    }
 }
